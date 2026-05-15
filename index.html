@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ScootCheck — E-Scooter Parking Detector</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:      #0d0d0f; --bg2: #161619; --bg3: #1e1e23;
+    --border:  rgba(255,255,255,0.07); --border2: rgba(255,255,255,0.14);
+    --text:    #f0efe8; --muted: #8a8982;
+    --ok:      #52b788; --ok-dim: rgba(82,183,136,0.12);
+    --bad:     #ff6b6b; --bad-dim: rgba(255,107,107,0.12);
+    --warn:    #ffd166;
+    --mono: 'DM Mono', monospace;
+    --serif: 'Fraunces', serif;
+    --sans: 'DM Sans', sans-serif;
+  }
+  body { background:var(--bg); color:var(--text); font-family:var(--sans); min-height:100vh; display:flex; flex-direction:column; }
+
+  /* Header */
+  header { padding:1.75rem 2rem 1.25rem; border-bottom:1px solid var(--border); display:flex; align-items:baseline; gap:1rem; }
+  header h1 { font-family:var(--serif); font-size:1.4rem; font-weight:600; letter-spacing:-0.01em; }
+  header h1 span { color:var(--ok); }
+  .badge { font-family:var(--mono); font-size:0.65rem; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); background:var(--bg3); border:1px solid var(--border2); padding:0.2rem 0.5rem; border-radius:4px; }
+
+  /* Layout */
+  main { flex:1; display:grid; grid-template-columns:1fr 1fr; gap:2rem; max-width:1200px; width:100%; margin:0 auto; padding:2rem; align-items:start; }
+  @media(max-width:760px){ main{grid-template-columns:1fr; padding:1rem;} }
+
+  /* Panel */
+  .panel { background:var(--bg2); border:1px solid var(--border); border-radius:14px; overflow:hidden; }
+  .panel-header { padding:0.9rem 1.25rem; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:0.5rem; }
+  .panel-label { font-family:var(--mono); font-size:0.7rem; text-transform:uppercase; letter-spacing:0.1em; color:var(--muted); }
+  .dot { width:6px; height:6px; border-radius:50%; background:var(--muted); flex-shrink:0; }
+  .dot.active { background:var(--ok); animation:pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.4} }
+
+  /* Drop zone */
+  .drop-zone { padding:2.5rem 2rem; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1rem; cursor:pointer; min-height:260px; position:relative; transition:background 0.15s; }
+  .drop-zone:hover, .drop-zone.dragging { background:var(--bg3); }
+  .drop-zone input[type=file] { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+  .drop-icon { width:52px; height:52px; border:1.5px dashed var(--border2); border-radius:12px; display:flex; align-items:center; justify-content:center; transition:border-color 0.15s; }
+  .drop-zone:hover .drop-icon { border-color:var(--ok); }
+  .drop-text { text-align:center; }
+  .drop-text strong { display:block; font-size:0.88rem; font-weight:500; }
+  .drop-text small { font-size:0.75rem; color:var(--muted); font-family:var(--mono); }
+
+  /* Preview */
+  .preview-wrap { padding:1rem; position:relative; }
+  .preview-wrap img { width:100%; border-radius:8px; object-fit:contain; max-height:340px; display:block; border:1px solid var(--border); background:#000; }
+  .preview-remove { position:absolute; top:1.4rem; right:1.4rem; width:26px; height:26px; border-radius:50%; background:rgba(0,0,0,0.75); border:1px solid var(--border2); color:var(--muted); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:13px; transition:color 0.15s; }
+  .preview-remove:hover { color:var(--text); }
+  .analyze-btn { margin:0 1rem 1rem; width:calc(100% - 2rem); padding:0.7rem; background:var(--ok); color:#0d1a12; font-family:var(--sans); font-size:0.88rem; font-weight:600; border:none; border-radius:8px; cursor:pointer; transition:background 0.15s, transform 0.1s; }
+  .analyze-btn:hover { background:#6fcf97; }
+  .analyze-btn:active { transform:scale(0.98); }
+  .analyze-btn:disabled { background:var(--bg3); color:var(--muted); cursor:not-allowed; transform:none; }
+
+  /* Result states */
+  .result-inner { padding:1.5rem; min-height:200px; }
+  .result-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:0.75rem; min-height:260px; color:var(--muted); text-align:center; }
+  .result-empty p { font-size:0.82rem; line-height:1.65; max-width:230px; }
+  .loading-wrap { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1.25rem; min-height:260px; }
+  .spinner { width:34px; height:34px; border:2px solid var(--border2); border-top-color:var(--ok); border-radius:50%; animation:spin 0.7s linear infinite; }
+  @keyframes spin{ to{transform:rotate(360deg)} }
+  .loading-label { font-family:var(--mono); font-size:0.72rem; color:var(--muted); letter-spacing:0.06em; }
+  .error-box { background:rgba(193,18,31,0.08); border:1px solid rgba(193,18,31,0.25); border-radius:10px; padding:1rem; font-size:0.82rem; color:var(--bad); line-height:1.6; }
+  .error-box strong { display:block; margin-bottom:0.25rem; }
+
+  /* Verdict */
+  .verdict { display:flex; align-items:center; gap:1rem; margin-bottom:1.25rem; }
+  .verdict-icon { width:48px; height:48px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:1.5rem; flex-shrink:0; }
+  .verdict-icon.ok  { background:var(--ok-dim); }
+  .verdict-icon.bad { background:var(--bad-dim); }
+  .verdict-label { font-family:var(--serif); font-size:1.3rem; font-weight:600; letter-spacing:-0.01em; }
+  .verdict-label.ok  { color:var(--ok); }
+  .verdict-label.bad { color:var(--bad); }
+  .verdict-sub { font-size:0.75rem; color:var(--muted); margin-top:0.2rem; font-family:var(--mono); }
+
+  /* Confidence bar */
+  .conf-row { margin-bottom:1.25rem; }
+  .conf-row-header { display:flex; justify-content:space-between; font-family:var(--mono); font-size:0.7rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:0.45rem; }
+  .conf-row-header span:last-child { color:var(--text); }
+  .bar-track { height:5px; background:var(--bg3); border-radius:99px; overflow:hidden; }
+  .bar-fill { height:100%; border-radius:99px; width:0%; transition:width 0.6s cubic-bezier(0.23,1,0.32,1); }
+  .bar-fill.ok  { background:var(--ok); }
+  .bar-fill.bad { background:var(--bad); }
+
+  /* Annotated image */
+  .annotated-section { margin-bottom:1.25rem; }
+  .annotated-label { font-family:var(--mono); font-size:0.7rem; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); margin-bottom:0.45rem; }
+  .annotated-section img { width:100%; border-radius:8px; border:1px solid var(--border); object-fit:contain; max-height:280px; background:#000; display:block; }
+
+  /* Detections list */
+  .detections { margin-bottom:1.25rem; }
+  .det-row { display:flex; align-items:center; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid var(--border); font-size:0.8rem; }
+  .det-row:last-child { border-bottom:none; }
+  .det-class { font-weight:500; }
+  .det-class.ok  { color:var(--ok); }
+  .det-class.bad { color:var(--bad); }
+  .det-conf { font-family:var(--mono); font-size:0.72rem; color:var(--muted); }
+
+  /* Advice */
+  .advice-box { background:var(--bg3); border:1px solid var(--border); border-radius:10px; padding:1rem; font-size:0.82rem; line-height:1.65; color:var(--muted); }
+  .advice-box strong { color:var(--text); font-weight:500; display:block; margin-bottom:0.3rem; font-family:var(--mono); font-size:0.68rem; text-transform:uppercase; letter-spacing:0.1em; }
+
+  /* Timing */
+  .timing { margin-top:1rem; font-family:var(--mono); font-size:0.67rem; color:var(--muted); }
+  .timing span { color:var(--text); }
+
+  /* Footer */
+  footer { padding:1rem 2rem; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem; }
+  footer p { font-family:var(--mono); font-size:0.67rem; color:var(--muted); }
+  code { background:var(--bg3); padding:0.1em 0.35em; border-radius:3px; font-size:0.9em; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Scoot<span>Check</span></h1>
+  <span class="badge">YOLOv8 Detection · MVP</span>
+</header>
+
+<main>
+
+  <!-- LEFT: Upload -->
+  <div class="panel">
+    <div class="panel-header">
+      <div class="dot" id="upload-dot"></div>
+      <span class="panel-label">Upload image</span>
+    </div>
+
+    <div class="drop-zone" id="drop-zone">
+      <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp,image/bmp" />
+      <div class="drop-icon">
+        <svg width="22" height="22" fill="none" stroke="var(--ok)" stroke-width="1.5" viewBox="0 0 24 24">
+          <path d="M4 16l4-4 4 4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M12 12v9" stroke-linecap="round"/>
+          <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="drop-text">
+        <strong>Drop a photo here</strong>
+        <small>or click to browse · JPEG PNG WEBP</small>
+      </div>
+    </div>
+
+    <div id="preview-section" style="display:none">
+      <div class="preview-wrap">
+        <img id="preview-img" src="" alt="Scooter photo" />
+        <button class="preview-remove" id="remove-btn">✕</button>
+      </div>
+      <button class="analyze-btn" id="analyze-btn">Analyze Parking →</button>
+    </div>
+  </div>
+
+  <!-- RIGHT: Result -->
+  <div class="panel">
+    <div class="panel-header">
+      <div class="dot" id="result-dot"></div>
+      <span class="panel-label">Analysis result</span>
+    </div>
+
+    <div class="result-inner">
+
+      <div class="result-empty" id="state-empty">
+        <svg width="38" height="38" fill="none" stroke="currentColor" stroke-width="1.2" viewBox="0 0 24 24" opacity="0.25">
+          <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35" stroke-linecap="round"/>
+        </svg>
+        <p>Upload a photo of a parked e-scooter and hit Analyze to detect proper / improper parking.</p>
+      </div>
+
+      <div class="loading-wrap" id="state-loading" style="display:none">
+        <div class="spinner"></div>
+        <span class="loading-label">Running inference…</span>
+      </div>
+
+      <div id="state-error" style="display:none">
+        <div class="error-box"><strong>Something went wrong</strong><span id="error-msg"></span></div>
+      </div>
+
+      <div id="state-result" style="display:none">
+
+        <div class="verdict">
+          <div class="verdict-icon" id="verdict-icon"></div>
+          <div>
+            <div class="verdict-label" id="verdict-label"></div>
+            <div class="verdict-sub"  id="verdict-sub"></div>
+          </div>
+        </div>
+
+        <div class="conf-row">
+          <div class="conf-row-header"><span>Confidence</span><span id="conf-pct"></span></div>
+          <div class="bar-track"><div class="bar-fill" id="conf-bar"></div></div>
+        </div>
+
+        <!-- Annotated image with bounding boxes -->
+        <div class="annotated-section" id="annotated-section" style="display:none">
+          <div class="annotated-label">Detections</div>
+          <img id="annotated-img" src="" alt="Annotated result" />
+        </div>
+
+        <!-- Per-detection list -->
+        <div class="detections" id="det-list" style="display:none"></div>
+
+        <div class="advice-box">
+          <strong>Assessment</strong>
+          <span id="advice-text"></span>
+        </div>
+
+        <div class="timing">Inference: <span id="timing-ms"></span></div>
+      </div>
+
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  <p>ScootCheck MVP &mdash; YOLOv8 Object Detection</p>
+  <p>Run: <code>uvicorn app:app --reload</code> then open <code>localhost:8000</code></p>
+</footer>
+
+<script>
+const API = window.location.origin;
+
+const fileInput      = document.getElementById('file-input');
+const dropZone       = document.getElementById('drop-zone');
+const previewSection = document.getElementById('preview-section');
+const previewImg     = document.getElementById('preview-img');
+const removeBtn      = document.getElementById('remove-btn');
+const analyzeBtn     = document.getElementById('analyze-btn');
+const uploadDot      = document.getElementById('upload-dot');
+const resultDot      = document.getElementById('result-dot');
+
+const stEmpty   = document.getElementById('state-empty');
+const stLoading = document.getElementById('state-loading');
+const stError   = document.getElementById('state-error');
+const stResult  = document.getElementById('state-result');
+
+let selectedFile = null;
+
+function showState(name) {
+  stEmpty.style.display   = name === 'empty'   ? 'flex'  : 'none';
+  stLoading.style.display = name === 'loading' ? 'flex'  : 'none';
+  stError.style.display   = name === 'error'   ? 'block' : 'none';
+  stResult.style.display  = name === 'result'  ? 'block' : 'none';
+  resultDot.classList.toggle('active', name === 'result');
+}
+
+function showFile(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  selectedFile = file;
+  previewImg.src = URL.createObjectURL(file);
+  dropZone.style.display = 'none';
+  previewSection.style.display = 'block';
+  uploadDot.classList.add('active');
+  showState('empty');
+}
+
+fileInput.addEventListener('change', e => { if (e.target.files[0]) showFile(e.target.files[0]); });
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragging'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragging'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('dragging'); showFile(e.dataTransfer.files[0]); });
+
+removeBtn.addEventListener('click', () => {
+  selectedFile = null;
+  previewImg.src = '';
+  fileInput.value = '';
+  dropZone.style.display = 'flex';
+  previewSection.style.display = 'none';
+  uploadDot.classList.remove('active');
+  showState('empty');
+});
+
+analyzeBtn.addEventListener('click', async () => {
+  if (!selectedFile) return;
+  showState('loading');
+  analyzeBtn.disabled = true;
+  try {
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+    const resp = await fetch(`${API}/predict`, { method: 'POST', body: fd });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      throw new Error(err.detail || `HTTP ${resp.status}`);
+    }
+    renderResult(await resp.json());
+    showState('result');
+  } catch(err) {
+    document.getElementById('error-msg').textContent = err.message;
+    showState('error');
+  } finally {
+    analyzeBtn.disabled = false;
+  }
+});
+
+function renderResult(d) {
+  const ok = d.label === 'proper';
+
+  document.getElementById('verdict-icon').className   = `verdict-icon ${ok?'ok':'bad'}`;
+  document.getElementById('verdict-icon').textContent  = ok ? '✅' : '🚫';
+  document.getElementById('verdict-label').className   = `verdict-label ${ok?'ok':'bad'}`;
+  document.getElementById('verdict-label').textContent = ok ? 'Properly Parked' : 'Improperly Parked';
+  document.getElementById('verdict-sub').textContent   = d.no_detection
+    ? 'No scooter detected'
+    : `${d.confidence}% confidence`;
+
+  const bar = document.getElementById('conf-bar');
+  bar.className = `bar-fill ${ok?'ok':'bad'}`;
+  document.getElementById('conf-pct').textContent = `${d.confidence}%`;
+  setTimeout(() => { bar.style.width = `${d.confidence}%`; }, 50);
+
+  // Annotated image
+  const annSection = document.getElementById('annotated-section');
+  const annImg     = document.getElementById('annotated-img');
+  if (d.annotated_image) {
+    annImg.src = `data:image/jpeg;base64,${d.annotated_image}`;
+    annSection.style.display = 'block';
+  } else {
+    annSection.style.display = 'none';
+  }
+
+  // Detections list
+  const detList = document.getElementById('det-list');
+  if (d.detections && d.detections.length) {
+    detList.style.display = 'block';
+    detList.innerHTML = d.detections.map(det => {
+      const cls = det.class === 'proper' ? 'ok' : 'bad';
+      return `<div class="det-row">
+        <span class="det-class ${cls}">${det.class}</span>
+        <span class="det-conf">${det.confidence}% conf</span>
+      </div>`;
+    }).join('');
+  } else {
+    detList.style.display = 'none';
+  }
+
+  document.getElementById('advice-text').textContent = d.advice;
+  document.getElementById('timing-ms').textContent   = `${d.inference_ms} ms`;
+}
+</script>
+</body>
+</html>
